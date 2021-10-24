@@ -101,6 +101,7 @@ function initHttp() {
       } else {
         res.end(JSON.stringify({success: true, error: null, data: data}));
       }
+      return;
     }
     res.statusCode = 400;
     res.end();
