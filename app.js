@@ -1,3 +1,4 @@
+const ws = require('ws');
 const BME280 = require('bme280-sensor');
 const cron = require('node-schedule');
 const fs = require('fs');
@@ -9,6 +10,13 @@ const bme280 = new BME280({
     i2cBusNo: 1,
     i2cAddress: 0x76
 });
+
+const wss = new ws.WebSocketServer({port: 65070});
+function wsBroadcast(msg) {
+  wss.clients.forEach((cl) => {
+    cl.send(msg);
+  })
+}
 
 function readSensorData(callback) {
   bme280.readSensorData()
@@ -56,6 +64,17 @@ bme280.init()
       readToFile();
     });
     initHttp();
+
+    setTimeout(() => {
+      setInterval(() => {
+        readSensorData(function(data) {
+          if (data != null) {
+            var data_out = {time: unixTime(), temp: round(data.temperature_C), humidity: round(data.humidity), pressure: round(data.pressure_hPa)};
+            wsBroadcast(JSON.stringify(data_out));
+          }
+        });
+      }, 1000);
+    }, 1000 - new Date().getMilliseconds());
   })
   .catch((err) => console.error(`BME280 initialization failed: ${err} `));
 
@@ -77,6 +96,20 @@ function arrayCleanup(arr) {
 
 function initHttp() {
   const server = http.createServer((req, res) => {
+    if (req.url == "/status") {
+      res.setHeader('Content-Type', 'text/plain');
+      readSensorData(function(data) {
+        if (data == null) {
+          res.statusCode = 500;
+          res.end("Sensor error");
+        } else {
+          res.statusCode = 200;
+          res.end("ok");
+        }
+      });
+      return;
+    }
+
     if (req.url == "/data/now") {
       res.setHeader('Content-Type', 'application/json');
       readSensorData(function(data) {
